@@ -6,6 +6,8 @@
 @Author: Wang Yu
 
 @Time: 2023/07/24 14:54:12
+
+@Usage: python encryption.py -i [r_dna] [c_dna] -o [out] -c [config.json] -m [binary/image]
 """
 
 import os
@@ -56,8 +58,9 @@ xor_rule = [{'A':'T', 'T':'A', 'C':'G', 'G':'C'},
 
 def get_opts():
     opts = argparse.ArgumentParser()
-    opts.add_argument('-i', '--input', help='input file', required=True)
+    opts.add_argument('-i', '--input', nargs='+', help='input file', required=True)
     opts.add_argument('-o', '--output', help='output file', required=True)
+    opts.add_argument('-m', '--mode', help='encode mode', required=True)
     opts.add_argument('-c', '--config', help='config file', required=True)
     return opts.parse_args()
 
@@ -182,7 +185,7 @@ def tentmap(alpha, x0, max_g):
     return x_list
 
     
-def decode(input, codon_dict, out):
+def decode_img(input, codon_dict, out):
     '''
     对输入文件进行解码
     r_dna: 行索引DNA
@@ -191,7 +194,7 @@ def decode(input, codon_dict, out):
     r_dna = list()
     c_dna = list()
 
-    input = cv2.imread(input)
+    input = cv2.imread(input[0])
     width, height,_ = input.shape
     input_1d = list(input.flatten())
     for i in input_1d:
@@ -277,19 +280,101 @@ def decode(input, codon_dict, out):
     os.chdir(out)
     cv2.imwrite('recover.png', new_img)
 
+def decode_file(input, codon_dict, col_width, row_width, out):
+    '''
+    对输入文件进行解码
+    r_dna: 行索引DNA
+    c_dna: 列索引DNA
+    '''
+    r_dna = list()
+    c_dna = list()
+
+    r_file, c_file = input
+    with open(r_file, 'r') as f:
+        data = f.read().strip()
+    for i in range(int(len(data)/row_width)):
+        r_dna.append(data[i*row_width:(i+1)*row_width])
+
+    with open(c_file, 'r') as f:
+        data = f.read().strip()
+    for i in range(int(len(data)/col_width)):
+        c_dna.append(data[i*col_width:(i+1)*col_width])
+        
+    # 扩散
+    p0_r = 0.44453445
+    p_r = 0.5423
+    p0_c = 0.59223894
+    p_c = 0.6323
+    pwlcm_list_r = pwlcm(p0_r, p_r, len(r_dna))
+    pwlcm_list_c = pwlcm(p0_c, p_c, len(c_dna))
+    ect_c_dna = []
+    ect_r_dna = []
+    for i,k in enumerate(r_dna):
+        if int(pwlcm_list_r[i]* (10**12)) % 3  == 0:
+            rule = xor_rule[0]
+        elif int(pwlcm_list_r[i]* (10**12)) % 3  == 1:
+            rule = xor_rule[1]
+        else:
+            rule = xor_rule[2]
+        ss = ''
+        for j in k:
+            ss += rule[j]
+        ect_r_dna.append(ss)
+        
+    for i,k in enumerate(c_dna):
+        if int(pwlcm_list_c[i]* (10**12)) % 3  == 0:
+            rule = xor_rule[0]
+        elif int(pwlcm_list_c[i]* (10**12)) % 3  == 1:
+            rule = xor_rule[1]
+        else:
+            rule = xor_rule[2]
+        ss = ''
+        for j in k:
+            ss += rule[j]
+        ect_c_dna.append(ss)
+
+
+    # 初始化混沌映射参数u、z
+    u = 2.892
+    z = 0.8
+    limit = 256
+        
+    # logistic函数、sine函数置乱
+    sine_list = sine_map(0.598293, 3.57,len(r_dna))
+    new_c_dna = recover_sort(ect_c_dna,sine_list)
+    log_list = logistic_map(u,z,len(r_dna))
+    new_r_dna = recover_sort(ect_r_dna,log_list)
+    
+
+
+    new_condon = dict()
+    for key, value in codon_dict.items():
+        key1 = '_'.join(value)
+        value1 = key
+        new_condon[key1] = value1
+
+    pixes = []
+    for i,j in zip(new_r_dna, new_c_dna):
+        key = i+'_'+j
+        pixes.append(new_condon[key].to_bytes(1,'big'))
+    with open(out, 'wb') as f:
+        f.write(b''.join(pixes))
+
 if __name__ == '__main__':
     opts = get_opts()
     input = opts.input
     out = opts.output
+    mode = opts.mode
+    
     
     with open(opts.config, 'r') as f:
         config = json.load(f)
     cwd = os.getcwd()
     output = cwd + os.sep + out
-    if os.path.exists(output):
-        pass
-    else:
-        os.mkdir(output)
+    # if os.path.exists(output):
+    #     pass
+    # else:
+    #     os.mkdir(output)
 
     # 初始化行、列的数目和密码子数量
     # x = int(np.random.random(1)*8)
@@ -310,5 +395,10 @@ if __name__ == '__main__':
             codon_dict[key] = [i,j]
             count += 1
     # print(codon_dict)
-    
-    decode(input, codon_dict, out)
+    if mode == 'image':
+        decode_img(input, codon_dict, out)
+    else:
+        col_width = len(col_name[0])
+        row_width = len(row_name[0])
+        print(col_width, row_width)
+        decode_file(input, codon_dict, col_width, row_width, out)
