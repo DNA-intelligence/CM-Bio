@@ -6,6 +6,8 @@
 @Author: Wang Yu
 
 @Time: 2023/07/24 14:54:12
+
+@Usage: python encryption.py -i [input] -o [out] -c [config.json] -m [binary/image]
 """
 
 import os
@@ -58,6 +60,7 @@ def get_opts():
     opts = argparse.ArgumentParser()
     opts.add_argument('-i', '--input', help='input file', required=True)
     opts.add_argument('-o', '--output', help='output file', required=True)
+    opts.add_argument('-m', '--mode', help='encode mode', required=True)
     opts.add_argument('-c', '--config', help='config file', required=True)
     return opts.parse_args()
 
@@ -225,7 +228,15 @@ def write_pic(img, output):
     out = output+'_out.bmp'
     cv2.imwrite('out.bmp',new_img)
     
-def encode(input, codon_dict):
+def read_bit(input):
+    out = list()
+    with open(input, 'rb') as f:
+        data = f.read()
+    for i in data:
+        out.append(i)
+    return out
+
+def encode(input, codon_dict, mode):
     '''
     对输入文件进行编码
     r_dna: 行索引DNA
@@ -233,15 +244,18 @@ def encode(input, codon_dict):
     '''
     r_dna = list()
     c_dna = list()
-
-    input, width, height = read_pic(input)
-    input_1d = list(input.flatten())
+    if mode == 'image':
+        input, width, height = read_pic(input)
+        input_1d = list(input.flatten())
+    elif mode == 'binary':
+        input_1d = read_bit(input)
+        width, height = '', ''
     for i in input_1d:
         r_dna.append(codon_dict[i][0])
         c_dna.append(codon_dict[i][1])
     return r_dna, c_dna, width, height
 
-def decode_tmp(r_dna, c_dna, condon_dict, width, height, output):
+def decode_tmp_1(r_dna, c_dna, condon_dict, width, height, output):
     new_condon = dict()
     for key, value in condon_dict.items():
         key1 = '_'.join(value)
@@ -258,10 +272,28 @@ def decode_tmp(r_dna, c_dna, condon_dict, width, height, output):
     print(out)
     cv2.imwrite(out, img,[int(cv2.IMWRITE_PNG_COMPRESSION), 9])    
 
+def decode_tmp_2(r_dna, c_dna, condon_dict, output, suf):
+    new_condon = dict()
+    for key, value in codon_dict.items():
+        key1 = '_'.join(value)
+        value1 = key
+        new_condon[key1] = value1
+
+    pixes = []
+    for i,j in zip(r_dna, c_dna):
+        key = i+'_'+j
+        pixes.append(new_condon[key].to_bytes(1,'big'))
+    
+    out_file = output+ os.sep + 'out.'+ suf
+    with open(out_file, 'wb') as f:
+        f.write(b''.join(pixes))   
+    
 if __name__ == '__main__':
     opts = get_opts()
     input = opts.input
     out = opts.output
+    mode = opts.mode
+    suf = input.strip().split('.')[-1]
     
     with open(opts.config, 'r') as f:
         config = json.load(f)
@@ -303,7 +335,7 @@ if __name__ == '__main__':
     
     # 信息编码
     print("开始编码！")
-    r_dna, c_dna, width, height = encode(input, codon_dict)
+    r_dna, c_dna, width, height = encode(input, codon_dict, mode)
 
     # logistic函数、sine函数置乱
     log_list = logistic_map(u,z,len(r_dna))
@@ -346,7 +378,11 @@ if __name__ == '__main__':
         ect_c_dna.append(ss)
 
     # 直接解码加密信息
-    decode_tmp(ect_r_dna, ect_c_dna, codon_dict, width, height, out)
+    if mode == 'image':
+        decode_tmp_1(ect_r_dna, ect_c_dna, codon_dict, width, height, out)
+    else:
+        decode_tmp_2(ect_r_dna, ect_c_dna, codon_dict, out, suf)
+        
     r_dna = ''.join(ect_r_dna)
     c_dna = ''.join(ect_c_dna)
     with open(output+os.sep+"r_dna.fa","w") as f:
