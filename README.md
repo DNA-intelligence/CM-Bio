@@ -11,16 +11,18 @@ CM-Bio：a unified programming paradigm that spans computational and microbial s
 ## Usage
 * **encode**  
 ```
-python encryption.py -i minecraft.png -o test -c config.json
+python encryption.py -i [input] -o [out] -c [config.json] -m [binary/image]
 ```
 > -i: file for encrypt, a colorful image  
 > -o: output file  
 > -c: config file which include two numbers of encode tables
+> -m: encryption encoding mode
 
 * **decode**  
 ```
-python decryption.py -i .\test\out_chest.png -o out -c config.json
+python encryption.py -i [r_dna] [c_dna] -o [out] -c [config.json] -m [binary/image]
 ```
-> -i: encrypted image  
+> -i: encrypted DNA sequence file
 > -o: output directory  
 > -c: config file which include two numbers of encode tables
+> -m: encryption encoding mode
